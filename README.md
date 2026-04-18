@@ -1,6 +1,6 @@
 # Go Async - Concurrent Function Execution Library
 
-[![Go Version](https://img.shields.io/badge/Go-1.24.3-blue.svg)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-1.26.2-blue.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen.svg)](#testing)
 
