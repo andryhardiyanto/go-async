@@ -4,16 +4,17 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen.svg)](#testing)
 
-A simple, efficient, and type-safe Go library for executing multiple functions concurrently with comprehensive error handling and timeout support.
+A simple, efficient, and type-safe Go library for executing multiple functions concurrently with built-in panic recovery, timeout support, and compile-time generics for result binding.
 
 ## Features
 
 - 🚀 **Concurrent Execution**: Run multiple functions simultaneously using goroutines
-- 🔒 **Type Safety**: Compile-time and runtime type checking with reflection
+- 🔒 **Compile-Time Type Safety**: Generic `Bind[T]` helper ensures type safety without reflection
 - ⏱️ **Timeout Support**: Set timeouts for async operations
-- 🛡️ **Error Handling**: Comprehensive error propagation and context cancellation
+- 🛡️ **Panic Recovery**: Goroutine panics are caught and returned as errors
 - 🔗 **Method Chaining**: Fluent API for easy usage
-- 📦 **Zero Dependencies**: Only uses Go standard library and `golang.org/x/sync/errgroup`
+- 🧩 **Context Propagation**: Each task receives the parent context for cancellation awareness
+- 📦 **Minimal Dependencies**: Only uses Go standard library and `golang.org/x/sync/errgroup`
 
 ## Installation
 
@@ -30,31 +31,31 @@ import (
     "context"
     "fmt"
     "time"
-    
+
     "github.com/andryhardiyanto/go-async"
 )
 
 func main() {
     runner := async.NewAsyncRunner()
-    
+
     var result1 int
     var result2 string
-    
+
     err := runner.RunInAsync().
-        Task(&result1, func() (any, error) {
+        Task(async.Bind(&result1, func() (int, error) {
             time.Sleep(100 * time.Millisecond)
             return 42, nil
-        }).
-        Task(&result2, func() (any, error) {
+        })).
+        Task(async.Bind(&result2, func() (string, error) {
             time.Sleep(50 * time.Millisecond)
             return "Hello, World!", nil
-        }).
+        })).
         Go(context.Background())
-    
+
     if err != nil {
         panic(err)
     }
-    
+
     fmt.Printf("Result 1: %d\n", result1) // Output: Result 1: 42
     fmt.Printf("Result 2: %s\n", result2) // Output: Result 2: Hello, World!
 }
@@ -62,7 +63,27 @@ func main() {
 
 ## API Reference
 
-### Core Interfaces
+### Core Types
+
+#### `AsyncFunc`
+
+```go
+type AsyncFunc func(ctx context.Context) error
+```
+
+A function that can be executed concurrently. It receives a context to handle graceful cancellations.
+
+#### `Async`
+
+```go
+type Async interface {
+    Task(fn AsyncFunc) Async
+    WithTimeout(timeout time.Duration) Async
+    Go(ctx context.Context) error
+}
+```
+
+Interface for building and executing a batch of async operations.
 
 #### `AsyncRunner`
 
@@ -74,57 +95,46 @@ type AsyncRunner interface {
 
 Factory interface for creating async operation batches.
 
-#### `Async`
-
-```go
-type Async interface {
-    Task(dest any, asyncFunc AsyncFunc) Async
-    WithTimeout(timeout time.Duration) Async
-    Go(ctx context.Context) error
-}
-```
-
-Main interface for building and executing async operations.
-
-#### `AsyncFunc`
-
-```go
-type AsyncFunc func() (any, error)
-```
-
-Function signature for async operations.
-
-### Methods
+### Functions
 
 #### `NewAsyncRunner() AsyncRunner`
 
 Creates a new AsyncRunner instance.
 
-#### `Task(dest any, asyncFunc AsyncFunc) Async`
+#### `Bind[T any](dest *T, fn func() (T, error)) AsyncFunc`
 
-Adds an async function to the execution queue.
+A generic helper (also referred to as `Await` in some patterns) that bridges a function's result to a destination pointer. It ensures type safety at compile-time without the overhead of reflection.
 
-- `dest`: Pointer to store the result (must be a pointer type)
-- `asyncFunc`: Function to execute asynchronously
+- `dest`: Pointer to store the result (pass `nil` to discard the result)
+- `fn`: Function that returns a typed result and an error
+- Returns: An `AsyncFunc` that can be passed to `Task()`
+
+### Methods
+
+#### `Task(fn AsyncFunc) Async`
+
+Adds a function to the execution queue.
+
+- `fn`: An `AsyncFunc` to execute concurrently (use `Bind()` to capture results)
 - Returns: Same Async instance for method chaining
 
 #### `WithTimeout(timeout time.Duration) Async`
 
-Sets a timeout for all async operations in the batch.
+Sets a maximum duration for the entire batch to complete.
 
 - `timeout`: Maximum duration to wait for all operations
 - Returns: Same Async instance for method chaining
 
 #### `Go(ctx context.Context) error`
 
-Executes all queued async operations concurrently.
+Executes all queued tasks concurrently and waits for completion or the first error.
 
 - `ctx`: Context for cancellation and timeout control
-- Returns: Error if any operation fails, times out, or context is cancelled
+- Returns: Error if any operation fails, panics, times out, or context is cancelled
 
 ## Usage Examples
 
-### Basic Usage
+### Basic Usage with Bind
 
 ```go
 runner := async.NewAsyncRunner()
@@ -133,11 +143,30 @@ var num int
 var text string
 
 err := runner.RunInAsync().
-    Task(&num, func() (any, error) {
+    Task(async.Bind(&num, func() (int, error) {
         return 100, nil
-    }).
-    Task(&text, func() (any, error) {
+    })).
+    Task(async.Bind(&text, func() (string, error) {
         return "async result", nil
+    })).
+    Go(context.Background())
+
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### Raw Task (No Result Binding)
+
+For tasks that don't need to return a value, pass an `AsyncFunc` directly:
+
+```go
+runner := async.NewAsyncRunner()
+
+err := runner.RunInAsync().
+    Task(func(ctx context.Context) error {
+        // perform side-effect work, e.g. send an email
+        return sendNotification(ctx)
     }).
     Go(context.Background())
 
@@ -155,10 +184,10 @@ var result int
 
 err := runner.RunInAsync().
     WithTimeout(5 * time.Second).
-    Task(&result, func() (any, error) {
+    Task(async.Bind(&result, func() (int, error) {
         time.Sleep(2 * time.Second)
         return 42, nil
-    }).
+    })).
     Go(context.Background())
 
 if err != nil {
@@ -174,9 +203,9 @@ runner := async.NewAsyncRunner()
 var result int
 
 err := runner.RunInAsync().
-    Task(&result, func() (any, error) {
-        return nil, errors.New("something went wrong")
-    }).
+    Task(async.Bind(&result, func() (int, error) {
+        return 0, errors.New("something went wrong")
+    })).
     Go(context.Background())
 
 if err != nil {
@@ -197,10 +226,10 @@ runner := async.NewAsyncRunner()
 var result int
 
 err := runner.RunInAsync().
-    Task(&result, func() (any, error) {
+    Task(async.Bind(&result, func() (int, error) {
         time.Sleep(5 * time.Second) // This will be cancelled
         return 42, nil
-    }).
+    })).
     Go(ctx)
 
 if err != nil {
@@ -221,18 +250,18 @@ var (
 )
 
 err := runner.RunInAsync().
-    Task(&userID, func() (any, error) {
-        return fetchUserID(), nil
-    }).
-    Task(&userName, func() (any, error) {
-        return fetchUserName(), nil
-    }).
-    Task(&userAge, func() (any, error) {
-        return fetchUserAge(), nil
-    }).
-    Task(&isActive, func() (any, error) {
-        return fetchUserStatus(), nil
-    }).
+    Task(async.Bind(&userID, func() (int, error) {
+        return fetchUserID()
+    })).
+    Task(async.Bind(&userName, func() (string, error) {
+        return fetchUserName()
+    })).
+    Task(async.Bind(&userAge, func() (int, error) {
+        return fetchUserAge()
+    })).
+    Task(async.Bind(&isActive, func() (bool, error) {
+        return fetchUserStatus()
+    })).
     Go(context.Background())
 
 if err != nil {
@@ -240,16 +269,14 @@ if err != nil {
 }
 ```
 
-## Error Types
+## Error Handling
 
-The library provides detailed error messages for different failure scenarios:
+The library handles the following error scenarios:
 
-- **Type Mismatch**: `type mismatch: cannot assign int to string`
-- **Invalid Destination**: `destination must be a pointer, received int (kind: int)`
-- **Nil Pointer**: `destination pointer cannot be nil`
-- **Timeout**: `async operation was cancelled: context deadline exceeded`
-- **Cancellation**: `async operation was cancelled: context canceled`
-- **Assignment Error**: `failed to assign result: [specific error]`
+- **Task Error**: Any error returned by an `AsyncFunc` is propagated
+- **Panic Recovery**: `async task panicked: <panic value>`
+- **Timeout**: `context deadline exceeded`
+- **Cancellation**: `context canceled`
 
 ## Testing
 
@@ -269,34 +296,28 @@ go test -bench=. -benchmem
 
 The library includes comprehensive tests covering:
 
-- ✅ Basic functionality
+- ✅ Basic functionality with `Bind`
 - ✅ Error handling
 - ✅ Context cancellation
 - ✅ Timeout operations
-- ✅ Type compatibility
-- ✅ Nil pointer handling
-- ✅ Performance benchmarks
-
-## Performance
-
-Benchmark results on Apple M1 Pro:
-
-```
-BenchmarkAsyncExecution-8                 647395    1855 ns/op    640 B/op    19 allocs/op
-BenchmarkAsyncExecutionManyTasks-8        261549    4996 ns/op   1720 B/op    50 allocs/op
-```
+- ✅ Raw task execution (without `Bind`)
+- ✅ Nil destination with `Bind`
+- ✅ Panic recovery
+- ✅ Context propagation to tasks
 
 ## Best Practices
 
-1. **Always use pointers** for destination variables
-2. **Handle errors** returned by the `Go()` method
-3. **Use context** for cancellation and timeout control
-4. **Set reasonable timeouts** for long-running operations
-5. **Avoid shared state** between async functions without proper synchronization
+1. **Use `Bind[T]` for result capture** — it provides compile-time type safety without reflection
+2. **Use raw `AsyncFunc` for side-effects** — when no result is needed, pass a `func(ctx context.Context) error` directly
+3. **Handle errors** returned by the `Go()` method
+4. **Use context** for cancellation and timeout control
+5. **Set reasonable timeouts** for long-running operations
+6. **Avoid shared state** between async functions without proper synchronization
+7. **Leverage context in tasks** — `AsyncFunc` receives context, use it for downstream calls (HTTP, DB, etc.)
 
 ## Requirements
 
-- Go 1.24.3 or later
+- Go 1.26 or later (generics support required)
 - `golang.org/x/sync/errgroup` package
 
 ## Contributing

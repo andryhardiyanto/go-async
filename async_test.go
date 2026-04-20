@@ -9,27 +9,27 @@ import (
 
 func TestAsyncBasicFunctionality(t *testing.T) {
 	runner := NewAsyncRunner()
-	
+
 	var result1 int
 	var result2 string
-	
+
 	err := runner.RunInAsync().
-		Task(&result1, func() (any, error) {
+		Task(Bind(&result1, func() (int, error) {
 			return 42, nil
-		}).
-		Task(&result2, func() (any, error) {
+		})).
+		Task(Bind(&result2, func() (string, error) {
 			return "hello", nil
-		}).
+		})).
 		Go(context.Background())
-	
+
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	
+
 	if result1 != 42 {
 		t.Errorf("Expected result1 to be 42, got %d", result1)
 	}
-	
+
 	if result2 != "hello" {
 		t.Errorf("Expected result2 to be 'hello', got %s", result2)
 	}
@@ -37,19 +37,19 @@ func TestAsyncBasicFunctionality(t *testing.T) {
 
 func TestAsyncWithError(t *testing.T) {
 	runner := NewAsyncRunner()
-	
+
 	var result int
-	
+
 	err := runner.RunInAsync().
-		Task(&result, func() (any, error) {
-			return nil, errors.New("test error")
-		}).
+		Task(Bind(&result, func() (int, error) {
+			return 0, errors.New("test error")
+		})).
 		Go(context.Background())
-	
+
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
-	
+
 	if err.Error() != "test error" {
 		t.Errorf("Expected 'test error', got %v", err)
 	}
@@ -57,91 +57,96 @@ func TestAsyncWithError(t *testing.T) {
 
 func TestAsyncWithCancellation(t *testing.T) {
 	runner := NewAsyncRunner()
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
-	
+
 	var result int
-	
+
 	err := runner.RunInAsync().
-		Task(&result, func() (any, error) {
+		Task(Bind(&result, func() (int, error) {
 			time.Sleep(100 * time.Millisecond)
 			return 42, nil
-		}).
+		})).
 		Go(ctx)
-	
+
 	if err == nil {
 		t.Fatal("Expected cancellation error, got nil")
 	}
 }
 
-func TestAsyncTypeCompatibility(t *testing.T) {
+func TestAsyncWithRawTask(t *testing.T) {
 	runner := NewAsyncRunner()
-	
-	var result string
-	
-	// This should fail because we're trying to assign int to string
-	err := runner.RunInAsync().
-		Task(&result, func() (any, error) {
-			return 42, nil // int instead of string
-		}).
-		Go(context.Background())
-	
-	if err == nil {
-		t.Fatal("Expected type compatibility error, got nil")
-	}
-}
 
-func TestAsyncNilPointer(t *testing.T) {
-	runner := NewAsyncRunner()
-	
-	var result *int // nil pointer
-	
-	err := runner.RunInAsync().
-		Task(result, func() (any, error) {
-			return 42, nil
-		}).
-		Go(context.Background())
-	
-	if err == nil {
-		t.Fatal("Expected nil pointer error, got nil")
-	}
-}
+	called := false
 
-func TestAsyncNonPointerDest(t *testing.T) {
-	runner := NewAsyncRunner()
-	
-	var result int
-	
-	// Pass non-pointer (should fail)
+	// Test using a raw AsyncFunc without Bind
 	err := runner.RunInAsync().
-		Task(result, func() (any, error) {
-			return 42, nil
+		Task(func(ctx context.Context) error {
+			called = true
+			return nil
 		}).
 		Go(context.Background())
-	
-	if err == nil {
-		t.Fatal("Expected non-pointer error, got nil")
-	}
-}
 
-func TestAsyncNilResult(t *testing.T) {
-	runner := NewAsyncRunner()
-	
-	var result int
-	
-	// Return nil result (should not cause error)
-	err := runner.RunInAsync().
-		Task(&result, func() (any, error) {
-			return nil, nil
-		}).
-		Go(context.Background())
-	
 	if err != nil {
-		t.Fatalf("Expected no error for nil result, got %v", err)
+		t.Fatalf("Expected no error, got %v", err)
 	}
-	
-	// result should remain unchanged (zero value)
+
+	if !called {
+		t.Error("Expected task to be called")
+	}
+}
+
+func TestAsyncWithRawTaskError(t *testing.T) {
+	runner := NewAsyncRunner()
+
+	err := runner.RunInAsync().
+		Task(func(ctx context.Context) error {
+			return errors.New("raw task error")
+		}).
+		Go(context.Background())
+
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	if err.Error() != "raw task error" {
+		t.Errorf("Expected 'raw task error', got %v", err)
+	}
+}
+
+func TestAsyncBindNilDest(t *testing.T) {
+	runner := NewAsyncRunner()
+
+	// Bind with nil dest should not panic, result is discarded
+	err := runner.RunInAsync().
+		Task(Bind[int](nil, func() (int, error) {
+			return 42, nil
+		})).
+		Go(context.Background())
+
+	if err != nil {
+		t.Fatalf("Expected no error for nil dest, got %v", err)
+	}
+}
+
+func TestAsyncBindNilResult(t *testing.T) {
+	runner := NewAsyncRunner()
+
+	var result int
+
+	// Return zero value (should not cause error)
+	err := runner.RunInAsync().
+		Task(Bind(&result, func() (int, error) {
+			return 0, nil
+		})).
+		Go(context.Background())
+
+	if err != nil {
+		t.Fatalf("Expected no error for zero-value result, got %v", err)
+	}
+
+	// result should remain zero value
 	if result != 0 {
 		t.Errorf("Expected result to remain 0, got %d", result)
 	}
@@ -149,22 +154,24 @@ func TestAsyncNilResult(t *testing.T) {
 
 func TestAsyncWithTimeout(t *testing.T) {
 	runner := NewAsyncRunner()
-	
-	var result int
-	
-	// Task that takes longer than timeout
+
+	// Task that blocks until context is done, ensuring timeout is detected
 	err := runner.RunInAsync().
 		WithTimeout(50 * time.Millisecond).
-		Task(&result, func() (any, error) {
-			time.Sleep(100 * time.Millisecond) // Sleep longer than timeout
-			return 42, nil
+		Task(func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(200 * time.Millisecond):
+				return nil
+			}
 		}).
 		Go(context.Background())
-	
+
 	if err == nil {
 		t.Fatal("Expected timeout error, got nil")
 	}
-	
+
 	// Should be a context deadline exceeded error
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Expected context.DeadlineExceeded, got %v", err)
@@ -173,23 +180,70 @@ func TestAsyncWithTimeout(t *testing.T) {
 
 func TestAsyncWithTimeoutSuccess(t *testing.T) {
 	runner := NewAsyncRunner()
-	
+
 	var result int
-	
+
 	// Task that completes within timeout
 	err := runner.RunInAsync().
-		WithTimeout(100 * time.Millisecond).
-		Task(&result, func() (any, error) {
-			time.Sleep(10 * time.Millisecond) // Sleep less than timeout
+		WithTimeout(200 * time.Millisecond).
+		Task(Bind(&result, func() (int, error) {
 			return 42, nil
-		}).
+		})).
 		Go(context.Background())
-	
+
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	
+
 	if result != 42 {
 		t.Errorf("Expected result to be 42, got %d", result)
+	}
+}
+
+func TestAsyncPanicRecovery(t *testing.T) {
+	runner := NewAsyncRunner()
+
+	err := runner.RunInAsync().
+		Task(func(ctx context.Context) error {
+			panic("something went wrong")
+		}).
+		Go(context.Background())
+
+	if err == nil {
+		t.Fatal("Expected error from panic, got nil")
+	}
+
+	expected := "async task panicked: something went wrong"
+	if err.Error() != expected {
+		t.Errorf("Expected '%s', got %v", expected, err)
+	}
+}
+
+func TestAsyncContextPassedToTask(t *testing.T) {
+	runner := NewAsyncRunner()
+
+	type ctxKey string
+	key := ctxKey("test-key")
+	ctx := context.WithValue(context.Background(), key, "test-value")
+
+	var received string
+
+	err := runner.RunInAsync().
+		Task(func(ctx context.Context) error {
+			val, ok := ctx.Value(key).(string)
+			if !ok {
+				return errors.New("context value not found")
+			}
+			received = val
+			return nil
+		}).
+		Go(ctx)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if received != "test-value" {
+		t.Errorf("Expected 'test-value', got %s", received)
 	}
 }
