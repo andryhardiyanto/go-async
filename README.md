@@ -19,7 +19,7 @@ A simple, efficient, and type-safe Go library for executing multiple functions c
 ## Installation
 
 ```bash
-go get github.com/andryhardiyanto/go-async
+go get github.com/andryhardiyanto/go-async/v2
 ```
 
 ## Quick Start
@@ -32,7 +32,7 @@ import (
     "fmt"
     "time"
 
-    "github.com/andryhardiyanto/go-async"
+    "github.com/andryhardiyanto/go-async/v2"
 )
 
 func main() {

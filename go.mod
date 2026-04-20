@@ -1,4 +1,4 @@
-module github.com/andryhardiyanto/go-async
+module github.com/andryhardiyanto/go-async/v2
 
 go 1.26.2
 
