@@ -43,9 +43,9 @@ func (a *asyncRunner) RunInAsync() Async {
 
 // Bind is a generic helper that bridges a function's result to a destination pointer.
 // It ensures type safety at compile-time without the overhead of reflection.
-func Bind[T any](dest *T, fn func() (T, error)) AsyncFunc {
+func Bind[T any](dest *T, fn func(ctx context.Context) (T, error)) AsyncFunc {
 	return func(ctx context.Context) error {
-		res, err := fn()
+		res, err := fn(ctx)
 		if err != nil {
 			return err
 		}

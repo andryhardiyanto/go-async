@@ -14,10 +14,10 @@ func TestAsyncBasicFunctionality(t *testing.T) {
 	var result2 string
 
 	err := runner.RunInAsync().
-		Task(Bind(&result1, func() (int, error) {
+		Task(Bind(&result1, func(ctx context.Context) (int, error) {
 			return 42, nil
 		})).
-		Task(Bind(&result2, func() (string, error) {
+		Task(Bind(&result2, func(ctx context.Context) (string, error) {
 			return "hello", nil
 		})).
 		Go(context.Background())
@@ -41,7 +41,7 @@ func TestAsyncWithError(t *testing.T) {
 	var result int
 
 	err := runner.RunInAsync().
-		Task(Bind(&result, func() (int, error) {
+		Task(Bind(&result, func(ctx context.Context) (int, error) {
 			return 0, errors.New("test error")
 		})).
 		Go(context.Background())
@@ -64,7 +64,7 @@ func TestAsyncWithCancellation(t *testing.T) {
 	var result int
 
 	err := runner.RunInAsync().
-		Task(Bind(&result, func() (int, error) {
+		Task(Bind(&result, func(ctx context.Context) (int, error) {
 			time.Sleep(100 * time.Millisecond)
 			return 42, nil
 		})).
@@ -120,7 +120,7 @@ func TestAsyncBindNilDest(t *testing.T) {
 
 	// Bind with nil dest should not panic, result is discarded
 	err := runner.RunInAsync().
-		Task(Bind[int](nil, func() (int, error) {
+		Task(Bind[int](nil, func(ctx context.Context) (int, error) {
 			return 42, nil
 		})).
 		Go(context.Background())
@@ -137,7 +137,7 @@ func TestAsyncBindNilResult(t *testing.T) {
 
 	// Return zero value (should not cause error)
 	err := runner.RunInAsync().
-		Task(Bind(&result, func() (int, error) {
+		Task(Bind(&result, func(ctx context.Context) (int, error) {
 			return 0, nil
 		})).
 		Go(context.Background())
@@ -186,7 +186,7 @@ func TestAsyncWithTimeoutSuccess(t *testing.T) {
 	// Task that completes within timeout
 	err := runner.RunInAsync().
 		WithTimeout(200 * time.Millisecond).
-		Task(Bind(&result, func() (int, error) {
+		Task(Bind(&result, func(ctx context.Context) (int, error) {
 			return 42, nil
 		})).
 		Go(context.Background())

@@ -19,7 +19,7 @@ A simple, efficient, and type-safe Go library for executing multiple functions c
 ## Installation
 
 ```bash
-go get github.com/andryhardiyanto/go-async/v2
+go get github.com/andryhardiyanto/go-async
 ```
 
 ## Quick Start
@@ -32,7 +32,7 @@ import (
     "fmt"
     "time"
 
-    "github.com/andryhardiyanto/go-async/v2"
+    "github.com/andryhardiyanto/go-async"
 )
 
 func main() {
@@ -42,11 +42,11 @@ func main() {
     var result2 string
 
     err := runner.RunInAsync().
-        Task(async.Bind(&result1, func() (int, error) {
+        Task(async.Bind(&result1, func(ctx context.Context) (int, error) {
             time.Sleep(100 * time.Millisecond)
             return 42, nil
         })).
-        Task(async.Bind(&result2, func() (string, error) {
+        Task(async.Bind(&result2, func(ctx context.Context) (string, error) {
             time.Sleep(50 * time.Millisecond)
             return "Hello, World!", nil
         })).
@@ -101,7 +101,7 @@ Factory interface for creating async operation batches.
 
 Creates a new AsyncRunner instance.
 
-#### `Bind[T any](dest *T, fn func() (T, error)) AsyncFunc`
+#### `Bind[T any](dest *T, fn func(ctx context.Context) (T, error)) AsyncFunc`
 
 A generic helper (also referred to as `Await` in some patterns) that bridges a function's result to a destination pointer. It ensures type safety at compile-time without the overhead of reflection.
 
@@ -143,10 +143,10 @@ var num int
 var text string
 
 err := runner.RunInAsync().
-    Task(async.Bind(&num, func() (int, error) {
+    Task(async.Bind(&num, func(ctx context.Context) (int, error) {
         return 100, nil
     })).
-    Task(async.Bind(&text, func() (string, error) {
+    Task(async.Bind(&text, func(ctx context.Context) (string, error) {
         return "async result", nil
     })).
     Go(context.Background())
@@ -184,7 +184,7 @@ var result int
 
 err := runner.RunInAsync().
     WithTimeout(5 * time.Second).
-    Task(async.Bind(&result, func() (int, error) {
+    Task(async.Bind(&result, func(ctx context.Context) (int, error) {
         time.Sleep(2 * time.Second)
         return 42, nil
     })).
@@ -203,7 +203,7 @@ runner := async.NewAsyncRunner()
 var result int
 
 err := runner.RunInAsync().
-    Task(async.Bind(&result, func() (int, error) {
+    Task(async.Bind(&result, func(ctx context.Context) (int, error) {
         return 0, errors.New("something went wrong")
     })).
     Go(context.Background())
@@ -226,7 +226,7 @@ runner := async.NewAsyncRunner()
 var result int
 
 err := runner.RunInAsync().
-    Task(async.Bind(&result, func() (int, error) {
+    Task(async.Bind(&result, func(ctx context.Context) (int, error) {
         time.Sleep(5 * time.Second) // This will be cancelled
         return 42, nil
     })).
@@ -250,16 +250,16 @@ var (
 )
 
 err := runner.RunInAsync().
-    Task(async.Bind(&userID, func() (int, error) {
+    Task(async.Bind(&userID, func(ctx context.Context) (int, error) {
         return fetchUserID()
     })).
-    Task(async.Bind(&userName, func() (string, error) {
+    Task(async.Bind(&userName, func(ctx context.Context) (string, error) {
         return fetchUserName()
     })).
-    Task(async.Bind(&userAge, func() (int, error) {
+    Task(async.Bind(&userAge, func(ctx context.Context) (int, error) {
         return fetchUserAge()
     })).
-    Task(async.Bind(&isActive, func() (bool, error) {
+    Task(async.Bind(&isActive, func(ctx context.Context) (bool, error) {
         return fetchUserStatus()
     })).
     Go(context.Background())

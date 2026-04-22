@@ -13,13 +13,13 @@ func BenchmarkAsyncExecution(b *testing.B) {
 		var result1, result2, result3 int
 
 		err := runner.RunInAsync().
-			Task(Bind(&result1, func() (int, error) {
+			Task(Bind(&result1, func(ctx context.Context) (int, error) {
 				return 1, nil
 			})).
-			Task(Bind(&result2, func() (int, error) {
+			Task(Bind(&result2, func(ctx context.Context) (int, error) {
 				return 2, nil
 			})).
-			Task(Bind(&result3, func() (int, error) {
+			Task(Bind(&result3, func(ctx context.Context) (int, error) {
 				return 3, nil
 			})).
 			Go(context.Background())
@@ -41,7 +41,7 @@ func BenchmarkAsyncExecutionManyTasks(b *testing.B) {
 		results := make([]int, 10)
 		for j := 0; j < 10; j++ {
 			j := j // capture loop variable
-			a.Task(Bind(&results[j], func() (int, error) {
+			a.Task(Bind(&results[j], func(ctx context.Context) (int, error) {
 				return j, nil
 			}))
 		}
